@@ -39,11 +39,15 @@ vox notes.md            то же самое из терминала
 | качество | среднее | заметно живее |
 | старт звука | ~50 мс | ~3 с (прогрев модели) |
 | зависимости | нет | torch в отдельном venv, ~2.5 ГБ |
-| голоса | Milena, Samantha (англ.) | aidar, baya, kseniya, xenia, eugene |
+| голоса | Milena, Samantha (англ.) | aidar (по умолчанию), baya, kseniya, xenia, eugene |
+| темп / высота | `rate` | `rate` → medium/slow/fast, `pitch` в конфиге |
 
 `say` стримит синтез сам, поэтому звук идёт мгновенно. Silero синтезирует
 кусками: пока играет кусок N, готовится N+1, — так простыня начинает звучать
-почти сразу, а не после обработки всего текста.
+почти сразу, а не после обработки всего текста. Текст уходит в Silero как SSML:
+темп и высота — через `<prosody>`, паузы между абзацами — через `<break>` внутри
+звука, без стыков. Silero понимает только именованные значения темпа, поэтому
+`rate` округляется: 100 → x-slow, 160 → slow, 200 → medium, 240 → fast, 300 → x-fast.
 
 Поставить Silero: `vox setup silero` (нужен `uv`: `brew install uv`).
 Переключить: `engine = "silero"` в конфиге или флаг `--engine silero`.
@@ -79,7 +83,9 @@ vox config                 открыть конфиг в редакторе
 ## Конфиг
 
 `~/.config/vox/config.toml` — движок, голос, темп, порог авточтения, что делать
-с кодом и таблицами (`announce` | `skip` | `read`).
+с кодом и таблицами (`announce` | `skip` | `read`). Для Silero отдельно:
+`pitch` (`x-low` … `x-high`, есть даже `robot`), `sample_rate` (48000 — лучшее
+качество, стоит по умолчанию) и `put_accent` (автоударения и ё).
 
 `~/.config/vox/lexicon.toml` — свои варианты произношения, перебивают встроенный
 словарь:
@@ -121,10 +127,25 @@ python3 -m pytest -q                           # тоже подойдёт
 
 ## Установка и обновление
 
+Одной командой после клонирования:
+
+```sh
+git clone git@github.com:snowtema/vox.git ~/Develop/vox
+sh ~/Develop/vox/install.sh              # или  --no-silero, если хватит системного say
+```
+
+Скрипт ставит CLI в `~/.local/bin`, алиас `/say`, плагин Claude Code, а затем
+Silero: `uv` (через brew, если нет), venv с torch (~700 МБ) и модель (~60 МБ).
+Нужны только macOS и python3 3.11+. Повторный запуск безопасен и обновляет плагин.
+Что получилось — покажет `vox doctor`.
+
+То же руками:
+
 ```sh
 ln -sf ~/Develop/vox/bin/vox ~/.local/bin/vox     # CLI в PATH
 claude plugin marketplace add ~/Develop/vox       # плагин: /vox:say и Stop-хук
 claude plugin install vox@vox-local
+vox setup silero                                  # необязательно
 ```
 
 Команды плагинов получают префикс, поэтому из плагина команда называется

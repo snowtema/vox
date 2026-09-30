@@ -121,6 +121,10 @@ def cmd_doctor(cfg: config.Config) -> int:
     # Silero необязателен: его отсутствие — не поломка, а не начатая установка
     optional = [
         ("движок silero", *get("silero").available()),
+        ("uv (для установки silero)", bool(shutil.which("uv")),
+         "не найден — `brew install uv`"),
+        ("afplay (для воспроизведения silero)", bool(shutil.which("afplay")),
+         "не найден — есть только на macOS"),
         ("ffmpeg (для --out с silero)", bool(shutil.which("ffmpeg")),
          "не найден — `brew install ffmpeg`"),
     ]

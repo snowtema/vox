@@ -5,7 +5,8 @@
 открытым на всю озвучку.
 
 Протокол — JSON по строке на stdin/stdout:
-    ->  {"text": "...", "out": "/путь/chunk.wav"}
+    ->  {"ssml": "<speak>…</speak>", "out": "/путь/chunk.wav"}
+    ->  {"text": "…", "out": "/путь/chunk.wav"}          (без разметки)
     <-  {"ok": true, "path": "..."} | {"error": "..."}
 """
 
@@ -31,8 +32,9 @@ def main() -> int:
             continue
         try:
             req = json.loads(line)
+            source = {"ssml_text": req["ssml"]} if "ssml" in req else {"text": req["text"]}
             model.save_wav(
-                text=req["text"],
+                **source,
                 speaker=speaker,
                 sample_rate=int(sample_rate),
                 audio_path=req["out"],

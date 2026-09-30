@@ -20,7 +20,10 @@ class LoadTest(IsolatedCase):
         self.assertTrue(cfg.auto)
         self.assertEqual(cfg.min_chars, 600)
         self.assertEqual(cfg.text.code_blocks, "announce")
-        self.assertEqual(cfg.silero.voice, "baya")
+        self.assertEqual(cfg.silero.voice, "aidar")
+        self.assertEqual(cfg.silero.pitch, "medium")
+        self.assertEqual(cfg.silero.sample_rate, 48000)
+        self.assertTrue(cfg.silero.put_accent)
 
     def test_partial_override_keeps_other_defaults(self):
         self.write("config/vox/config.toml",

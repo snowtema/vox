@@ -141,12 +141,13 @@ FAKE_WORKER = textwrap.dedent('''\
     sys.stdout.write(json.dumps({"ready": True}) + "\\n"); sys.stdout.flush()
     for line in sys.stdin:
         req = json.loads(line)
+        payload = req.get("ssml", req.get("text"))
         with open(log, "a") as fh:
-            fh.write(req["text"] + "\\n")
-        if "FAIL" in req["text"]:
+            fh.write(payload + "\\n")
+        if "FAIL" in payload:
             resp = {"error": "RuntimeError: boom"}
         else:
-            open(req["out"], "w").write(req["text"])
+            open(req["out"], "w").write(payload)
             resp = {"ok": True, "path": req["out"]}
         sys.stdout.write(json.dumps(resp) + "\\n"); sys.stdout.flush()
 ''')
@@ -252,13 +253,65 @@ class SileroEngineTest(IsolatedCase):
     def test_prepare_expands_numbers(self):
         self.assertEqual(self.engine.prepare("Прошло 12 строк."), "Прошло двенадцать строк.")
 
-    def test_unknown_speaker_falls_back_to_baya(self):
+    def test_unknown_speaker_falls_back_to_default(self):
         self.cfg.silero.voice = "robot"
         with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
-            self.assertEqual(self.engine._speaker(self.cfg), "baya")
+            self.assertEqual(self.engine._speaker(self.cfg), "aidar")
         self.assertIn("robot", out.getvalue())
         self.cfg.silero.voice = "aidar"
         self.assertEqual(self.engine._speaker(self.cfg), "aidar")
+
+    # SSML: темп, высота, паузы
+
+    def test_prosody_rate_maps_wpm_to_nearest_named_value(self):
+        cases = {200: "medium", 100: "x-slow", 160: "slow", 180: "slow", 220: "fast",
+                 240: "fast", 300: "x-fast", 400: "x-fast", 60: "x-slow"}
+        for wpm, expected in cases.items():
+            with self.subTest(wpm=wpm):
+                self.assertEqual(silero_mod.prosody_rate(wpm), expected)
+
+    def test_build_ssml(self):
+        self.assertEqual(
+            silero_mod.build_ssml("Привет.", 200, "medium", 380),
+            '<speak><prosody rate="medium" pitch="medium">Привет.</prosody>'
+            '<break time="380ms"/></speak>')
+        self.assertEqual(
+            silero_mod.build_ssml("Конец.", 240, "high"),
+            '<speak><prosody rate="fast" pitch="high">Конец.</prosody></speak>')
+
+    def test_build_ssml_escapes_markup_and_keeps_stress_marks(self):
+        ssml = silero_mod.build_ssml("a < b & c > d, кл+од", 200, "medium")
+        self.assertIn("a &lt; b &amp; c &gt; d, кл+од", ssml)
+        self.assertEqual(ssml.count("<"), 4)      # только наши теги: speak, prosody и их закрытия
+
+    def test_rate_and_pitch_from_config_reach_the_worker(self):
+        calls, patch_popen = self.patch_afplay()
+        self.cfg.rate, self.cfg.silero.pitch = 150, "low"
+        with patch_popen:
+            self.engine.speak("Текст.", self.cfg, "ru", lambda p: None)
+        self.assertIn('rate="slow" pitch="low"', self.requested()[0])
+
+    def test_unknown_pitch_falls_back_to_medium(self):
+        self.cfg.silero.pitch = "ultra"
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            self.assertEqual(self.engine._pitch(self.cfg), "medium")
+        self.assertIn("ultra", out.getvalue())
+        self.cfg.silero.pitch = "robot"
+        self.assertEqual(self.engine._pitch(self.cfg), "robot")
+
+    def test_setup_skips_torch_install_when_already_present(self):
+        silero_mod.venv_python().parent.mkdir(parents=True)
+        silero_mod.venv_python().touch()
+        silero_mod.model_path().touch()
+        ran = []
+        with mock.patch("vox.engines.silero.shutil.which", return_value="/usr/bin/uv"), \
+                mock.patch.object(SileroEngine, "_run", side_effect=lambda cmd: ran.append(cmd)), \
+                mock.patch.object(SileroEngine, "_torch_ok", return_value=True), \
+                mock.patch.object(SileroEngine, "_await_ready"), \
+                mock.patch("sys.stdout", new_callable=io.StringIO):
+            self.engine.setup()
+        self.assertEqual(ran, [])
+        self.assertEqual(self.spawned, [("aidar", 48000, True)])
 
     # handshake
 
@@ -279,30 +332,35 @@ class SileroEngineTest(IsolatedCase):
         calls, patch_popen = self.patch_afplay()
         seen = []
         self.cfg.volume = 0.5
-        with patch_popen, mock.patch("vox.engines.silero.time.sleep") as sleep:
+        with patch_popen:
             self.engine.speak("Один.\n\nДва.\n\nТри.\n\nЧетыре.\n\nПять.",
                               self.cfg, "ru", seen.append)
 
-        self.assertEqual(self.requested(), ["Один.", "Два.", "Три.", "Четыре.", "Пять."])
+        reqs = self.requested()
+        self.assertEqual(len(reqs), 5)
+        for req, word in zip(reqs, ["Один.", "Два.", "Три.", "Четыре.", "Пять."]):
+            self.assertIn(f">{word}</prosody>", req)
+        # пауза абзаца — внутри SSML предыдущего куска, а не sleep между afplay
+        self.assertTrue(all('<break time="380ms"/>' in r for r in reqs[:4]))
+        self.assertNotIn("<break", reqs[4])
         self.assertEqual([c[-1].rsplit("/", 1)[1] for c in calls],
                          ["0.wav", "1.wav", "2.wav", "3.wav", "4.wav"])
         self.assertTrue(all(c[:3] == ["afplay", "-v", "0.50"] for c in calls))
-        self.assertEqual([c.args[0] for c in sleep.call_args_list], [0.38] * 4)
         self.assertEqual(len(seen), 1 + 5)           # воркер + пять проигрывателей
-        self.assertEqual(self.spawned, [("baya", 48000, True)])
+        self.assertEqual(self.spawned, [("aidar", 48000, True)])
 
     def test_speak_passes_voice_and_accent_settings_to_worker(self):
         calls, patch_popen = self.patch_afplay()
         self.cfg.silero.voice, self.cfg.silero.sample_rate = "xenia", 24000
         self.cfg.silero.put_accent = False
-        with patch_popen, mock.patch("vox.engines.silero.time.sleep"):
+        with patch_popen:
             self.engine.speak("Текст.", self.cfg, "ru", lambda p: None)
         self.assertEqual(self.spawned, [("xenia", 24000, False)])
 
     def test_speak_cleans_up_temp_files_and_worker(self):
         calls, patch_popen = self.patch_afplay()
         seen = []
-        with patch_popen, mock.patch("vox.engines.silero.time.sleep"):
+        with patch_popen:
             self.engine.speak("Текст.", self.cfg, "ru", seen.append)
         worker = seen[0]
         worker.wait(timeout=10)
@@ -316,7 +374,7 @@ class SileroEngineTest(IsolatedCase):
 
     def test_speak_raises_when_synthesis_fails(self):
         calls, patch_popen = self.patch_afplay()
-        with patch_popen, mock.patch("vox.engines.silero.time.sleep"):
+        with patch_popen:
             with self.assertRaises(EngineError) as ctx:
                 self.engine.speak("Хорошо.\n\nFAIL тут.", self.cfg, "ru", lambda p: None)
         self.assertIn("кусок 2", str(ctx.exception))
@@ -325,7 +383,7 @@ class SileroEngineTest(IsolatedCase):
 
     def test_speak_raises_when_player_fails(self):
         calls, patch_popen = self.patch_afplay(code=1)
-        with patch_popen, mock.patch("vox.engines.silero.time.sleep"):
+        with patch_popen:
             with self.assertRaises(EngineError) as ctx:
                 self.engine.speak("Текст.", self.cfg, "ru", lambda p: None)
         self.assertIn("afplay", str(ctx.exception))
@@ -346,7 +404,11 @@ class SileroEngineTest(IsolatedCase):
             result = self.engine.to_file("Раз.\n\nДва.", str(self.tmp / "out.wav"), self.cfg, "ru")
 
         self.assertEqual(result, str(self.tmp / "out.wav"))
-        self.assertEqual(self.requested(), ["Раз.", "Два."])
+        reqs = self.requested()
+        self.assertEqual(len(reqs), 2)
+        self.assertIn(">Раз.</prosody>", reqs[0])
+        self.assertIn('<break time="380ms"/>', reqs[0])     # пауза попадает и в файл
+        self.assertIn(">Два.</prosody>", reqs[1])
         self.assertEqual(captured["cmd"][0], "ffmpeg")
         self.assertEqual(captured["list"].count("file '"), 2)
         self.assertEqual(captured["cmd"][-1], str(self.tmp / "out.wav"))

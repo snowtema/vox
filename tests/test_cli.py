@@ -176,7 +176,7 @@ class OverridesTest(CliCase):
         run_main([self.md("Текст."), "--rate", "150", "--volume", "0.5", "--voice", "Yuri"])
         cfg = self.engine.spoken[0][1]
         self.assertEqual((cfg.rate, cfg.volume, cfg.say.voice), (150, 0.5, "Yuri"))
-        self.assertEqual(cfg.silero.voice, "baya")
+        self.assertEqual(cfg.silero.voice, "aidar")
 
     def test_voice_goes_to_silero_when_engine_is_silero(self):
         run_main([self.md("Текст."), "--engine", "silero", "--voice", "aidar"])

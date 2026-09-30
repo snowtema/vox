@@ -43,8 +43,9 @@ class SayCfg:
 
 @dataclass
 class SileroCfg:
-    voice: str = "baya"             # aidar | baya | kseniya | xenia | eugene
-    sample_rate: int = 48000
+    voice: str = "aidar"            # aidar | baya | kseniya | xenia | eugene
+    pitch: str = "medium"           # x-low | low | medium | high | x-high
+    sample_rate: int = 48000        # 8000 | 24000 | 48000
     put_accent: bool = True
 
 
@@ -99,7 +100,7 @@ DEFAULT_CONFIG = """\
 engine    = "say"      # say (macOS Milena, мгновенно) | silero (лучше качество)
 auto      = true       # читать длинные ответы Claude Code автоматически
 min_chars = 600        # ответ короче — не озвучивается
-rate      = 200        # темп речи, слов в минуту
+rate      = 200        # темп речи, слов в минуту (silero: 200 = medium, 160 = slow, 240 = fast)
 volume    = 0.9
 pause_ms  = 380        # пауза между абзацами
 
@@ -114,9 +115,10 @@ voice    = "Milena"        # русский голос macOS
 voice_en = "Samantha"      # голос для англоязычных документов
 
 [silero]
-voice       = "baya"       # aidar | baya | kseniya | xenia | eugene
-sample_rate = 48000
-put_accent  = true
+voice       = "aidar"      # aidar | baya | kseniya | xenia | eugene
+pitch       = "medium"     # x-low | low | medium | high | x-high
+sample_rate = 48000        # 8000 | 24000 | 48000 — выше = лучше
+put_accent  = true         # автоматические ударения и ё
 """
 
 DEFAULT_LEXICON = """\

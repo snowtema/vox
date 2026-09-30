@@ -23,12 +23,13 @@ FAKE_TORCH = textwrap.dedent('''\
 
     class _Model:
         def to(self, dev): return self
-        def save_wav(self, text, speaker, sample_rate, audio_path, put_accent, put_yo):
-            if "FAIL" in text:
+        def save_wav(self, text=None, ssml_text=None, speaker=None, sample_rate=None,
+                     audio_path=None, put_accent=None, put_yo=None):
+            if "FAIL" in (text or ssml_text):
                 raise RuntimeError("boom")
             with open(audio_path, "w") as fh:
-                json.dump(dict(text=text, speaker=speaker, sample_rate=sample_rate,
-                               put_accent=put_accent, put_yo=put_yo), fh)
+                json.dump(dict(text=text, ssml_text=ssml_text, speaker=speaker,
+                               sample_rate=sample_rate, put_accent=put_accent, put_yo=put_yo), fh)
 
     class _Importer:
         def __init__(self, path): self.path = path
@@ -65,8 +66,17 @@ class WorkerProtocolTest(IsolatedCase):
         self.assertEqual(replies[0], {"ready": True})
         self.assertEqual(replies[1], {"ok": True, "path": str(self.tmp / "a.wav")})
         saved = json.loads((self.tmp / "a.wav").read_text())
-        self.assertEqual(saved, {"text": "Привет.", "speaker": "baya", "sample_rate": 48000,
-                                 "put_accent": True, "put_yo": True})
+        self.assertEqual(saved, {"text": "Привет.", "ssml_text": None, "speaker": "baya",
+                                 "sample_rate": 48000, "put_accent": True, "put_yo": True})
+
+    def test_ssml_request_goes_to_ssml_text(self):
+        ssml = '<speak><prosody rate="medium" pitch="medium">Привет.</prosody></speak>'
+        code, replies = self.run_worker([json.dumps({"ssml": ssml, "out": str(self.tmp / "s.wav")})])
+        self.assertEqual(code, 0)
+        self.assertTrue(replies[1]["ok"])
+        saved = json.loads((self.tmp / "s.wav").read_text())
+        self.assertEqual(saved["ssml_text"], ssml)
+        self.assertIsNone(saved["text"])
 
     def test_speaker_rate_and_accent_come_from_argv(self):
         self.run_worker([self.request("Текст.")], accent="0", speaker="aidar", rate="24000")
