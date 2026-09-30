@@ -60,9 +60,12 @@ if command -v claude >/dev/null; then
     if claude plugin install vox@vox-local >/dev/null 2>&1; then
         ok "плагин vox установлен"
     else
-        claude plugin update vox@vox-local >/dev/null 2>&1 && ok "плагин vox обновлён" \
-            || warn "не удалось поставить плагин: claude plugin install vox@vox-local"
+        warn "не удалось поставить плагин: claude plugin install vox@vox-local"
     fi
+    # install на уже стоящем плагине — no-op: новую версию из кеша подтягивает только update
+    claude plugin update vox@vox-local >/dev/null 2>&1 \
+        && ok "плагин vox обновлён до $(python3 -c "import json;print(json.load(open('$root/.claude-plugin/plugin.json'))['version'])")" \
+        || warn "не удалось обновить плагин: claude plugin update vox@vox-local"
     warn "перезапусти Claude Code, чтобы хук и /say подхватились"
 else
     warn "claude не найден в PATH — плагин поставь позже:"
