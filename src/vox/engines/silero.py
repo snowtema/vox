@@ -185,6 +185,9 @@ class SileroEngine(Engine):
         pieces = chunker.chunks(text, pause_ms=cfg.pause_ms)
         if not pieces:
             raise EngineError("нечего синтезировать")
+        if not shutil.which("ffmpeg"):
+            # Проверяем до прогрева модели: иначе ffmpeg упадёт только в самом конце
+            raise EngineError("для записи в файл нужен ffmpeg: brew install ffmpeg")
 
         proc = self._spawn_worker(self._speaker(cfg), cfg.silero.sample_rate,
                                   cfg.silero.put_accent)

@@ -2,8 +2,10 @@
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from . import config, player, textnorm, transcript
@@ -32,9 +34,11 @@ def _read_files(paths: list[str]) -> tuple[str, str]:
 
 
 def _from_transcript(args) -> tuple[str, str]:
-    path = Path(args.transcript) if args.transcript else transcript.find_transcript()
+    path = (Path(args.transcript) if args.transcript
+            else transcript.find_transcript(fallback=args.any_dir))
     if not path or not path.exists():
-        raise FileNotFoundError("транскрипт Claude Code для этой директории не найден")
+        hint = "" if args.transcript else " (--any-dir — взять самый свежий из любого проекта)"
+        raise FileNotFoundError(f"транскрипт Claude Code для этой директории не найден{hint}")
     text = transcript.last_assistant_text(path, whole_turn=args.turn)
     if not text:
         raise ValueError("в последнем ответе Claude Code нет текста — только вызовы инструментов")
@@ -115,7 +119,11 @@ def cmd_doctor(cfg: config.Config) -> int:
          "будет создан при первом запуске"),
     ]
     # Silero необязателен: его отсутствие — не поломка, а не начатая установка
-    optional = [("движок silero", *get("silero").available())]
+    optional = [
+        ("движок silero", *get("silero").available()),
+        ("ffmpeg (для --out с silero)", bool(shutil.which("ffmpeg")),
+         "не найден — `brew install ffmpeg`"),
+    ]
 
     failed = 0
     for label, ok, hint in required:
@@ -130,11 +138,20 @@ def cmd_doctor(cfg: config.Config) -> int:
 
 # ── основной путь ─────────────────────────────────────────────────────────────
 
+def _discard_inputs(paths: list[str]) -> None:
+    for raw in paths:
+        Path(raw).expanduser().unlink(missing_ok=True)
+
+
 def run_speak(args, cfg: config.Config) -> int:
     try:
         raw, source = collect(args)
     except (FileNotFoundError, ValueError) as exc:
         return _err(str(exc))
+    finally:
+        # Временный файл от --detach нужен ровно до прочтения
+        if args.delete_input:
+            _discard_inputs(args.files)
 
     if args.auto:
         if player.is_muted() or not cfg.auto:
@@ -219,12 +236,31 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--quiet", "-q", action="store_true", help="без служебных сообщений")
     p.add_argument("--detach", "-d", action="store_true",
                    help="читать в фоне и сразу вернуть управление")
+    p.add_argument("--any-dir", action="store_true",
+                   help="если для этой директории нет транскрипта — взять самый свежий из любого проекта")
+    p.add_argument("--delete-input", action="store_true", help=argparse.SUPPRESS)
     return p
+
+
+STALE_INPUT_SECONDS = 24 * 3600
+
+
+def _sweep_stale_inputs() -> None:
+    """Подчищает stdin-файлы, которые не удалил фоновый процесс (он мог не запуститься)."""
+    cutoff = time.time() - STALE_INPUT_SECONDS
+    for path in config.cache_dir().glob("stdin-*.md"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+        except OSError:
+            pass
 
 
 def detach(argv: list[str], args) -> int:
     """Перезапускает себя в отдельной сессии и выходит."""
+    _sweep_stale_inputs()
     child = [a for a in argv if a not in ("--detach", "-d")]
+    tmp: Path | None = None
     # stdin фоновому процессу не достанется — материализуем его во временный файл.
     # Пустой stdin (так бывает внутри слеш-команды) — не ошибка: фоновый vox
     # тогда прочтёт последний ответ, как и без аргументов в терминале.
@@ -234,14 +270,19 @@ def detach(argv: list[str], args) -> int:
         if data.strip():
             tmp = Path(config.cache_dir()) / f"stdin-{os.getpid()}.md"
             tmp.write_text(data, encoding="utf-8")
-            child.append(str(tmp))
+            child += [str(tmp), "--delete-input"]
 
     exe = Path(__file__).resolve().parents[2] / "bin" / "vox"
     cmd = [str(exe), *child] if exe.exists() else [sys.executable, "-m", "vox", *child]
-    subprocess.Popen(
-        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL, start_new_session=True,
-    )
+    try:
+        subprocess.Popen(
+            cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+    except OSError as exc:
+        if tmp:
+            tmp.unlink(missing_ok=True)
+        return _err(f"не удалось запустить фоновое чтение: {exc}")
     return 0
 
 

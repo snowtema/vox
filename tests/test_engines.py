@@ -187,6 +187,10 @@ class SileroEngineTest(IsolatedCase):
         patcher = mock.patch.object(SileroEngine, "_spawn_worker", spawn)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # ffmpeg на машине с тестами может не стоять — по умолчанию он «есть»
+        which = mock.patch("vox.engines.silero.shutil.which", return_value="/usr/bin/ffmpeg")
+        which.start()
+        self.addCleanup(which.stop)
 
     def reap_workers(self):
         """Движок делает terminate() без wait() — дожимаем сами, чтобы не копить зомби."""
@@ -353,6 +357,13 @@ class SileroEngineTest(IsolatedCase):
             with self.assertRaises(EngineError) as ctx:
                 self.engine.to_file("Текст.", str(self.tmp / "o.wav"), self.cfg, "ru")
         self.assertIn("ffmpeg сломан", str(ctx.exception))
+
+    def test_to_file_without_ffmpeg_fails_fast_before_loading_the_model(self):
+        with mock.patch("vox.engines.silero.shutil.which", return_value=None):
+            with self.assertRaises(EngineError) as ctx:
+                self.engine.to_file("Текст.", str(self.tmp / "o.wav"), self.cfg, "ru")
+        self.assertIn("brew install ffmpeg", str(ctx.exception))
+        self.assertEqual(self.spawned, [])
 
     def test_to_file_reports_synthesis_failure(self):
         with self.assertRaises(EngineError):

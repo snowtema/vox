@@ -4,6 +4,7 @@ import json
 import os
 import signal
 import subprocess
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -316,8 +317,9 @@ class SubcommandsTest(CliCase):
 
     def test_doctor_all_good(self):
         transcript = self.write("claude/projects/p/s.jsonl",
-                                json.dumps({"cwd": str(self.tmp)}) + "\n")
-        rc, out, _ = run_main(["doctor"])
+                                json.dumps({"cwd": str(Path.cwd().resolve())}) + "\n")
+        with mock.patch("vox.cli.shutil.which", return_value="/usr/bin/ffmpeg"):
+            rc, out, _ = run_main(["doctor"])
         self.assertEqual(rc, 0)
         self.assertNotIn("✗", out)
         self.assertIn(str(transcript), out)
@@ -331,8 +333,18 @@ class SubcommandsTest(CliCase):
         _, out, _ = run_main(["doctor"])
         self.assertIn("✗  движок say — нет say", out)
 
+    def test_doctor_ffmpeg_is_optional_but_reported(self):
+        self.write("claude/projects/p/s.jsonl", json.dumps({"cwd": str(Path.cwd().resolve())}) + "\n")
+        with mock.patch("vox.cli.shutil.which", return_value=None):
+            rc, out, _ = run_main(["doctor"])
+        self.assertEqual(rc, 0)
+        self.assertIn("·  ffmpeg (для --out с silero) — не найден", out)
+        with mock.patch("vox.cli.shutil.which", return_value="/usr/bin/ffmpeg"):
+            _, out, _ = run_main(["doctor"])
+        self.assertIn("✓  ffmpeg", out)
+
     def test_doctor_treats_silero_as_optional(self):
-        self.write("claude/projects/p/s.jsonl", json.dumps({"cwd": str(self.tmp)}) + "\n")
+        self.write("claude/projects/p/s.jsonl", json.dumps({"cwd": str(Path.cwd().resolve())}) + "\n")
         real = {"say": FakeEngine(), "silero": FakeEngine((False, "не установлен"))}
         with mock.patch("vox.cli.get", side_effect=lambda name: real[name]):
             rc, out, _ = run_main(["doctor"])
@@ -364,7 +376,9 @@ class DetachTest(CliCase):
     def test_stdin_is_materialized_for_the_child(self):
         with mock.patch("vox.cli.subprocess.Popen") as popen:
             run_main(["--detach"], stdin="Прочти это")
-        tmp_file = Path(popen.call_args.args[0][-1])
+        cmd = popen.call_args.args[0]
+        self.assertEqual(cmd[-1], "--delete-input")         # ребёнок сам уберёт за собой
+        tmp_file = Path(cmd[-2])
         self.assertEqual(tmp_file.parent, config.cache_dir())
         self.assertEqual(tmp_file.read_text(encoding="utf-8"), "Прочти это")
 
@@ -373,11 +387,91 @@ class DetachTest(CliCase):
             run_main(["--detach"], stdin="")
         self.assertEqual(popen.call_args.args[0][1:], [])
 
+    def test_failed_launch_removes_temp_file_and_reports(self):
+        with mock.patch("vox.cli.subprocess.Popen", side_effect=OSError("нет прав")):
+            rc, _, err = run_main(["--detach"], stdin="Прочти это")
+        self.assertEqual(rc, 1)
+        self.assertIn("нет прав", err)
+        self.assertEqual(list(config.cache_dir().glob("stdin-*.md")), [])
+
+    def test_stale_temp_files_are_swept_on_detach(self):
+        cache = config.cache_dir()
+        old, fresh, other = cache / "stdin-1.md", cache / "stdin-2.md", cache / "keep.md"
+        for path in (old, fresh, other):
+            path.write_text("x")
+        two_days_ago = time.time() - 2 * 24 * 3600
+        os.utime(old, (two_days_ago, two_days_ago))
+        os.utime(other, (two_days_ago, two_days_ago))
+        with mock.patch("vox.cli.subprocess.Popen"):
+            run_main([self.md("Текст."), "--detach"])
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.exists())
+        self.assertTrue(other.exists())             # чужие файлы не трогаем
+
     def test_stdin_not_consumed_when_source_is_explicit(self):
         doc = self.md("Текст.")
         with mock.patch("vox.cli.subprocess.Popen") as popen:
             run_main([doc, "--detach"], stdin="лишнее")
         self.assertEqual(popen.call_args.args[0][1:], [doc])
+
+
+class DeleteInputTest(CliCase):
+    def test_input_is_deleted_after_speaking(self):
+        doc = self.md("Текст.")
+        run_main([doc, "--delete-input", "--quiet"])
+        self.assertEqual(len(self.engine.spoken), 1)
+        self.assertFalse(Path(doc).exists())
+
+    def test_input_is_deleted_even_when_there_is_nothing_to_read(self):
+        doc = self.md("***\n" * 10)
+        rc, _, _ = run_main([doc, "--delete-input"])
+        self.assertEqual(rc, 1)
+        self.assertFalse(Path(doc).exists())
+
+    def test_input_is_deleted_on_dry_run_and_when_auto_mode_skips_it(self):
+        for extra in (["--dry-run"], ["--auto"]):
+            with self.subTest(extra=extra):
+                doc = self.md("Коротко.")
+                run_main([doc, "--delete-input", *extra])
+                self.assertFalse(Path(doc).exists())
+
+    def test_without_the_flag_user_files_are_never_deleted(self):
+        doc = self.md("Текст.")
+        run_main([doc])
+        self.assertTrue(Path(doc).exists())
+
+    def test_flag_is_hidden_from_help(self):
+        self.assertNotIn("--delete-input", cli.build_parser().format_help())
+
+
+class AnyDirTest(CliCase):
+    def test_no_transcript_for_directory_is_an_error_with_hint(self):
+        self.write("claude/projects/p/s.jsonl",
+                   json.dumps({"cwd": "/другой/проект"}) + "\n" + assistant_entry("Чужой ответ") + "\n")
+        rc, _, err = run_main(["--last"])
+        self.assertEqual(rc, 1)
+        self.assertIn("для этой директории не найден", err)
+        self.assertIn("--any-dir", err)
+        self.assertEqual(self.engine.spoken, [])
+
+    def test_any_dir_takes_newest_transcript_from_any_project(self):
+        self.write("claude/projects/p/s.jsonl",
+                   json.dumps({"cwd": "/другой/проект"}) + "\n" + assistant_entry("Чужой ответ") + "\n")
+        rc, _, _ = run_main(["--last", "--any-dir"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.engine.spoken[0][0], "Чужой ответ.")
+
+    def test_own_directory_is_found_without_the_flag(self):
+        self.write("claude/projects/p/s.jsonl",
+                   json.dumps({"cwd": str(Path.cwd().resolve())}) + "\n"
+                   + assistant_entry("Свой ответ") + "\n")
+        run_main(["--last"])
+        self.assertEqual(self.engine.spoken[0][0], "Свой ответ.")
+
+    def test_explicit_transcript_error_has_no_any_dir_hint(self):
+        rc, _, err = run_main(["--transcript", str(self.tmp / "нет.jsonl")])
+        self.assertEqual(rc, 1)
+        self.assertNotIn("--any-dir", err)
 
 
 class ParserTest(unittest.TestCase):

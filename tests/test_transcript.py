@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from vox import transcript
 from tests.support import IsolatedCase
@@ -120,10 +121,71 @@ class FindTranscriptTest(IsolatedCase):
         (self.tmp / "proj").mkdir()
         self.assertEqual(transcript.find_transcript(str(self.tmp / "proj")), mine)
 
-    def test_falls_back_to_newest_when_cwd_unknown(self):
+    def test_foreign_project_is_not_picked_up_by_default(self):
+        # Озвучить ответ из чужого проекта хуже, чем честно сказать «не найдено»
+        self.make("a", "old", "/somewhere/a", mtime=1_000)
+        self.make("b", "new", "/somewhere/b", mtime=2_000)
+        self.assertIsNone(transcript.find_transcript(str(self.tmp)))
+
+    def test_fallback_takes_newest_from_any_project(self):
         self.make("a", "old", "/somewhere/a", mtime=1_000)
         newest = self.make("b", "new", "/somewhere/b", mtime=2_000)
-        self.assertEqual(transcript.find_transcript(str(self.tmp)), newest)
+        self.assertEqual(transcript.find_transcript(str(self.tmp), fallback=True), newest)
+
+    def test_fallback_with_no_transcripts_at_all(self):
+        (self.tmp / "claude" / "projects").mkdir(parents=True)
+        self.assertIsNone(transcript.find_transcript(str(self.tmp), fallback=True))
+
+    def test_matches_by_project_folder_name_when_cwd_changed(self):
+        # Сессию стартовали в проекте, а потом сделали cd: cwd в записях другой
+        proj = self.tmp / "my.proj"
+        proj.mkdir()
+        mine = self.make(transcript._slug(str(proj)), "s", "/elsewhere/after/cd", mtime=1_000)
+        self.make("other", "new", "/somewhere/b", mtime=2_000)
+        self.assertEqual(transcript.find_transcript(str(proj)), mine)
+
+    def test_matches_session_that_moved_into_the_directory_after_start(self):
+        # Сессия стартовала в родительской папке и потом сделала cd в проект:
+        # первая запись — родитель, последняя — проект (именно так живёт эта сессия)
+        proj = self.tmp / "parent" / "proj"
+        proj.mkdir(parents=True)
+        entries = [user("x", cwd=str(proj.parent)), assistant("a"), user("y", cwd=str(proj)),
+                   assistant("b")]
+        path = self.write("claude/projects/parent-slug/s.jsonl",
+                          "\n".join(json.dumps(e) for e in entries) + "\n")
+        os.utime(path, (1_000, 1_000))
+        self.make("other", "new", "/somewhere/b", mtime=2_000)
+        self.assertEqual(transcript.find_transcript(str(proj)), path)
+
+    def test_last_cwd_reads_only_the_tail_of_a_big_file(self):
+        big = self.write("big.jsonl", json.dumps({"cwd": "/old"}) + "\n"
+                         + (json.dumps({"type": "user", "pad": "x" * 500}) + "\n") * 1000
+                         + json.dumps({"cwd": "/new"}) + "\n")
+        self.assertGreater(big.stat().st_size, transcript.TAIL_BYTES)
+        self.assertEqual(transcript._last_cwd(big), "/new")
+        self.assertEqual(transcript._first_cwd(big), "/old")
+
+    def test_last_cwd_ignores_a_line_cut_by_the_tail_window(self):
+        with mock.patch.object(transcript, "TAIL_BYTES", 120):
+            path = self.write("t.jsonl", json.dumps({"cwd": "/a" * 200}) + "\n"
+                              + json.dumps({"cwd": "/b"}) + "\n")
+            self.assertEqual(transcript._last_cwd(path), "/b")
+
+    def test_last_cwd_of_unreadable_or_cwd_less_file(self):
+        self.assertIsNone(transcript._last_cwd(self.tmp / "нет.jsonl"))
+        self.assertIsNone(transcript._last_cwd(self.write("e.jsonl", '{"type": "user"}\n')))
+
+    def test_slug_replaces_everything_but_alphanumerics(self):
+        self.assertEqual(transcript._slug("/Users/a.b/My Proj_1"), "-Users-a-b-My-Proj-1")
+
+    def test_old_transcripts_beyond_scan_limit_are_not_read(self):
+        proj = self.tmp / "proj"
+        proj.mkdir()
+        self.make("a", "mine", str(proj), mtime=1_000)
+        for i in range(3):
+            self.make(f"x{i}", "n", f"/other/{i}", mtime=2_000 + i)
+        with mock.patch.object(transcript, "SCAN_LIMIT", 3):
+            self.assertIsNone(transcript.find_transcript(str(proj)))
 
     def test_cwd_is_resolved(self):
         proj = self.tmp / "proj"

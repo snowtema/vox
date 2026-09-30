@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import unittest
 
 from tests.support import IsolatedCase, ROOT
@@ -104,6 +105,16 @@ class LauncherTest(IsolatedCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout.strip(), "Модулем.")
+
+    def test_detach_leaves_no_temp_files_behind(self):
+        # --dry-run: фоновый процесс ничего не озвучивает, но файл обязан убрать
+        proc = self.vox("--detach", "--dry-run", stdin="Фоновый текст")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        cache = self.tmp / "cache" / "vox"
+        deadline = time.time() + 15
+        while time.time() < deadline and list(cache.glob("stdin-*.md")):
+            time.sleep(0.1)
+        self.assertEqual(list(cache.glob("stdin-*.md")), [])
 
     def test_missing_file_exit_code_and_message(self):
         proc = self.vox(str(self.tmp / "нет.md"))
