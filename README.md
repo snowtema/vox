@@ -1,94 +1,101 @@
 # vox
 
-Озвучка ответов Claude Code и markdown-файлов локальными TTS-движками.
-Ничего не уходит в сеть: синтез целиком на машине.
+Reads Claude Code answers and markdown files aloud with local TTS engines.
+Nothing leaves the machine: synthesis runs entirely on device.
+
+Built for Russian speech: the voices are Russian, and the text pipeline
+rewrites the Latin-heavy output of a coding assistant into something a Russian
+voice can pronounce. English documents are detected and read with an English
+system voice.
 
 ```
-/say                    прочитать последний ответ Claude Code
-/say README.md          прочитать файл
-/say stop               прервать
-vox notes.md            то же самое из терминала
+/say                    read the last Claude Code answer
+/say README.md          read a file
+/say stop               interrupt
+vox notes.md            the same from the terminal
 ```
 
-Длинные ответы (по умолчанию от 600 символов) читаются сами, короткие — нет.
+Long answers (600+ characters by default) are read automatically, short ones
+are not.
 
-## Зачем отдельный инструмент
+## Why a separate tool
 
-Ответ Claude Code нельзя просто скормить синтезатору: получится «бэктик эс эр
-си слэш апп слэш пейдж точка тэ эс икс бэктик». Основная работа vox —
-переписать markdown так, чтобы его было приятно слушать:
+You cannot feed a Claude Code answer straight into a synthesizer: you get
+"backtick es er see slash app slash page dot tee es ex backtick". Most of what
+vox does is rewriting markdown so it is pleasant to listen to:
 
-| В тексте | Как прочитается |
+| In the text | What you hear |
 |---|---|
-| ` ```ts … ``` ` (12 строк) | «Далее код на тэ эс, 12 строк» |
-| таблица на 5 строк | «Далее таблица, 5 строк» (или построчно) |
-| `src/app/components/Hero.tsx` | «Хиро тэ эс икс» |
-| `next.config.mjs:12` | «некст конфиг эм джей эс, строка 12» |
-| `[документация](https://…)` | «документация» |
-| `- [x] Готово` | «сделано: Готово» |
-| `**SSR**`, `CDN`, `pnpm` | «эс эс эр», «си ди эн», «пи эн пи эм» |
+| ` ```ts … ``` ` (12 lines) | «Далее код на тэ эс, 12 строк» — "code in ts follows, 12 lines" |
+| a 5-row table | «Далее таблица, 5 строк» — "a table follows, 5 rows" (or row by row) |
+| `src/app/components/Hero.tsx` | «Хиро тэ эс икс» — just the file name |
+| `next.config.mjs:12` | «некст конфиг эм джей эс, строка 12» — "…, line 12" |
+| `[docs](https://…)` | the link text only |
+| `- [x] Done` | «сделано: Done» — "done: …" |
+| `**SSR**`, `CDN`, `pnpm` | «эс эс эр», «си ди эн», «пи эн пи эм» — spelled out |
 
-Латиница переводится в кириллицу: русские голоса не умеют её читать. Сначала
-словарь из ~250 технических терминов, потом побуквенное чтение незнакомых
-аббревиатур, в остатке — фонетическая транслитерация.
+Latin script is converted to Cyrillic because Russian voices cannot read it:
+first a dictionary of ~250 technical terms, then letter-by-letter spelling for
+unknown acronyms, and phonetic transliteration for whatever is left.
 
-## Движки
+## Engines
 
-| | `say` (по умолчанию) | `silero` |
+| | `say` (default) | `silero` |
 |---|---|---|
-| качество | среднее | заметно живее |
-| старт звука | ~50 мс | ~3 с (прогрев модели) |
-| зависимости | нет | torch в отдельном venv, ~2.5 ГБ |
-| голоса | Milena, Samantha (англ.) | aidar (по умолчанию), baya, kseniya, xenia, eugene |
-| темп / высота | `rate` | `rate` → medium/slow/fast, `pitch` в конфиге |
+| quality | average | noticeably more natural |
+| time to first sound | ~50 ms | ~3 s (model warm-up) |
+| dependencies | none | torch in its own venv, ~700 MB |
+| voices | Milena, Samantha (English) | aidar (default), baya, kseniya, xenia, eugene |
+| rate / pitch | `rate` | `rate` → slow/medium/fast, `pitch` in config |
 
-`say` стримит синтез сам, поэтому звук идёт мгновенно. Silero синтезирует
-кусками: пока играет кусок N, готовится N+1, — так простыня начинает звучать
-почти сразу, а не после обработки всего текста. Текст уходит в Silero как SSML:
-темп и высота — через `<prosody>`, паузы между абзацами — через `<break>` внутри
-звука, без стыков. Silero понимает только именованные значения темпа, поэтому
-`rate` округляется: 100 → x-slow, 160 → slow, 200 → medium, 240 → fast, 300 → x-fast.
+`say` streams synthesis itself, so audio starts instantly. Silero synthesizes
+in chunks: while chunk N plays, chunk N+1 is being generated, so a long answer
+starts sounding almost immediately instead of after the whole text is
+processed. Text goes to Silero as SSML: rate and pitch through `<prosody>`,
+paragraph pauses through `<break>` inside the audio, so there are no seams
+between chunks. Silero only understands named rate values, so `rate` is
+rounded: 100 → x-slow, 160 → slow, 200 → medium, 240 → fast, 300 → x-fast.
 
-Поставить Silero: `vox setup silero` (нужен `uv`: `brew install uv`).
-Переключить: `engine = "silero"` в конфиге или флаг `--engine silero`.
+Install Silero: `vox setup silero` (needs `uv`: `brew install uv`).
+Switch: `engine = "silero"` in the config or the `--engine silero` flag.
 
-**Голос macOS лучше доустановить.** Базовая Milena старая и синтетическая.
-Системные настройки → Универсальный доступ → Устный контент → Системный голос →
-Управление голосами → русский → **Milena (расширенный)**. Разница большая.
+**Install the enhanced macOS voice.** The stock Milena is old and robotic.
+System Settings → Accessibility → Spoken Content → System Voice → Manage
+Voices → Russian → **Milena (Enhanced)**. The difference is large.
 
-## Команды
+## Commands
 
 ```
-vox                        последний ответ Claude Code
-vox ФАЙЛ…                  markdown- или текстовые файлы
-cat x.md | vox             со stdin
-vox --last / --turn        финальный текст / вся проза последнего хода
-vox --any-dir              если в этой папке сессии нет — взять самую свежую из любого проекта
-vox --dry-run              показать, что будет прочитано, и выйти
-vox --out речь.wav         записать в файл вместо чтения
-vox --engine silero -r 180 разовое переопределение движка и темпа
-vox stop                   прервать
-vox on / vox off           включить / выключить авточтение
-vox status                 что настроено и что сейчас играет
-vox doctor                 проверка окружения
-vox config                 открыть конфиг в редакторе
+vox                        the last Claude Code answer
+vox FILE…                  markdown or text files
+cat x.md | vox             from stdin
+vox --last / --turn        final text / all prose of the last turn
+vox --any-dir              no session in this folder — take the newest from any project
+vox --dry-run              print what would be read and exit
+vox --out speech.wav       write to a file instead of speaking
+vox --engine silero -r 180 one-off engine and rate override
+vox stop                   interrupt
+vox on / vox off           enable / disable auto-reading
+vox status                 what is configured and what is playing
+vox doctor                 environment check
+vox config                 open the config in an editor
 ```
 
-Одновременно читается только одно: новая озвучка глушит предыдущую.
+Only one thing is read at a time: a new reading silences the previous one.
 
-Ответ берётся из сессии Claude Code, запущенной в текущей папке (или из той, что
-стартовала выше и потом зашла в неё через `cd`). Чужой проект vox молча не
-читает — только с `--any-dir`.
+The answer is taken from the Claude Code session running in the current
+folder (or one that started in a parent folder and `cd`'d into it). vox never
+silently reads another project's session — only with `--any-dir`.
 
-## Конфиг
+## Config
 
-`~/.config/vox/config.toml` — движок, голос, темп, порог авточтения, что делать
-с кодом и таблицами (`announce` | `skip` | `read`). Для Silero отдельно:
-`pitch` (`x-low` … `x-high`, есть даже `robot`), `sample_rate` (48000 — лучшее
-качество, стоит по умолчанию) и `put_accent` (автоударения и ё).
+`~/.config/vox/config.toml` — engine, voice, rate, auto-read threshold, what to
+do with code blocks and tables (`announce` | `skip` | `read`). Silero-specific:
+`pitch` (`x-low` … `x-high`, there is even `robot`), `sample_rate` (48000 is the
+best quality and the default) and `put_accent` (automatic stress marks and ё).
 
-`~/.config/vox/lexicon.toml` — свои варианты произношения, перебивают встроенный
-словарь:
+`~/.config/vox/lexicon.toml` — your own pronunciations, override the built-in
+dictionary:
 
 ```toml
 [terms]
@@ -96,74 +103,75 @@ myapp = "майапп"
 hetzner   = "хетцнер"
 ```
 
-## Как устроено
+## How it works
 
 ```
-hooks/stop-speak.py   Stop-хук: запускает vox в фоне и сразу выходит (~50 мс)
-commands/say.md       слеш-команда /vox:say (алиас /say — в ~/.claude/commands)
-bin/vox               CLI, работает и без Claude Code
-src/vox/textnorm.py   markdown -> произносимый текст
-src/vox/lexicon.py    словарь терминов и транслитерация
-src/vox/chunker.py    нарезка на куски для потокового синтеза
-src/vox/engines/      say и silero
-src/vox/player.py     один голос за раз, остановка по сигналу
+hooks/stop-speak.py   Stop hook: launches vox in the background and exits (~50 ms)
+commands/say.md       slash command /vox:say (the /say alias lives in ~/.claude/commands)
+bin/vox               CLI, works without Claude Code too
+src/vox/textnorm.py   markdown -> speakable text
+src/vox/lexicon.py    term dictionary and transliteration
+src/vox/chunker.py    splitting into chunks for streaming synthesis
+src/vox/engines/      say and silero
+src/vox/player.py     one voice at a time, stop by signal
 ```
 
-Всё решения об озвучке (выключен ли режим, достаточно ли длинный текст)
-принимает `vox --auto`, а не хук, — поэтому хук остаётся тривиальным и быстрым.
+Every decision about reading (is auto mode off, is the text long enough) is
+made by `vox --auto`, not by the hook — so the hook stays trivial and fast.
 
-Зависимостей у CLI нет, только стандартная библиотека Python 3.11+.
+The CLI has no dependencies, only the Python 3.11+ standard library.
 
-## Тесты
+## Tests
 
 ```sh
-python3 -m unittest discover -s tests -t .     # stdlib, без зависимостей
-python3 -m pytest -q                           # тоже подойдёт
+python3 -m unittest discover -s tests -t .     # stdlib, no dependencies
+python3 -m pytest -q                           # works too
 ```
 
-Тесты изолированы: у каждого свои `XDG_*` и `HOME`, настоящие конфиг, состояние
-и кеш не трогаются. Звук не воспроизводится, torch не нужен — воркер Silero
-проверяется на заглушке.
+Tests are isolated: each gets its own `XDG_*` and `HOME`; the real config,
+state and cache are never touched. No audio is played and torch is not needed
+— the Silero worker is tested against a stub.
 
-## Установка и обновление
+## Install and update
 
-Одной командой после клонирования:
+One command after cloning:
 
 ```sh
 git clone git@github.com:snowtema/vox.git ~/Develop/vox
-sh ~/Develop/vox/install.sh              # или  --no-silero, если хватит системного say
+sh ~/Develop/vox/install.sh              # or --no-silero if the system say is enough
 ```
 
-Скрипт ставит CLI в `~/.local/bin`, алиас `/say`, плагин Claude Code, а затем
-Silero: `uv` (через brew, если нет), venv с torch (~700 МБ) и модель (~60 МБ).
-Нужны только macOS и python3 3.11+. Повторный запуск безопасен и обновляет плагин.
-Что получилось — покажет `vox doctor`.
+The script installs the CLI into `~/.local/bin`, the `/say` alias, the Claude
+Code plugin, and then Silero: `uv` (via brew if missing), a venv with torch
+(~700 MB) and the model (~60 MB). Requires only macOS and python3 3.11+.
+Re-running is safe and updates the plugin. `vox doctor` shows the result.
 
-То же руками:
+The same by hand:
 
 ```sh
-ln -sf ~/Develop/vox/bin/vox ~/.local/bin/vox     # CLI в PATH
-claude plugin marketplace add ~/Develop/vox       # плагин: /vox:say и Stop-хук
+ln -sf ~/Develop/vox/bin/vox ~/.local/bin/vox     # CLI in PATH
+claude plugin marketplace add ~/Develop/vox       # plugin: /vox:say and the Stop hook
 claude plugin install vox@vox-local
-vox setup silero                                  # необязательно
+vox setup silero                                  # optional
 ```
 
-Команды плагинов получают префикс, поэтому из плагина команда называется
-`/vox:say`. Короткий `/say` — отдельный алиас пользовательского уровня,
-`~/.claude/commands/say.md`, с тем же содержимым, что `commands/say.md`, но
-вызывающий `$HOME/.local/bin/vox` вместо `${CLAUDE_PLUGIN_ROOT}/bin/vox`.
+Plugin commands get a prefix, so inside the plugin the command is `/vox:say`.
+The short `/say` is a separate user-level alias, `~/.claude/commands/say.md`,
+with the same content as `commands/say.md` but calling `$HOME/.local/bin/vox`
+instead of `${CLAUDE_PLUGIN_ROOT}/bin/vox`.
 
-Claude Code копирует плагин в свой кеш и кеширует его по версии. После правок
-кода подними `version` в `.claude-plugin/plugin.json` и `marketplace.json`, затем:
+Claude Code copies the plugin into its cache, keyed by version. After changing
+code, bump `version` in `.claude-plugin/plugin.json` and `marketplace.json`,
+then:
 
 ```sh
 claude plugin marketplace update vox-local
-claude plugin update vox@vox-local                 # и перезапусти Claude Code
+claude plugin update vox@vox-local                 # and restart Claude Code
 ```
 
-Терминальный `vox` работает через симлинк и подхватывает правки сразу, без
-обновления. Конфиг и словарь лежат вне плагина (`~/.config/vox/`), их правка
-обновления не требует.
+The terminal `vox` runs through a symlink and picks up changes immediately,
+no update needed. The config and lexicon live outside the plugin
+(`~/.config/vox/`), so editing them requires no update either.
 
-Выключить целиком: `claude plugin disable vox` — или `vox off`, если нужно
-заглушить только автоматическое чтение.
+Turn it off entirely: `claude plugin disable vox` — or `vox off` to silence
+only the automatic reading.
