@@ -1,0 +1,13 @@
+#!/bin/sh
+# Запускает vox системным python3 (нужен только stdlib; torch живёт в своём venv).
+# Разворачиваем цепочку симлинков: vox обычно вызывается через ~/.local/bin/vox.
+self=$0
+while [ -L "$self" ]; do
+    link=$(readlink "$self")
+    case $link in
+        /*) self=$link ;;
+        *)  self=$(dirname "$self")/$link ;;
+    esac
+done
+root=$(cd "$(dirname "$self")/.." && pwd)
+PYTHONPATH="$root/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m vox "$@"

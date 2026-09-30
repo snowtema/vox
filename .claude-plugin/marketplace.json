@@ -1,0 +1,17 @@
+{
+  "name": "vox-local",
+  "owner": {
+    "name": "Artem Slizhik"
+  },
+  "metadata": {
+    "description": "Локальный маркетплейс с плагином vox",
+    "version": "0.1.4"
+  },
+  "plugins": [
+    {
+      "name": "vox",
+      "description": "Озвучка ответов Claude Code и markdown-файлов локальными TTS-движками",
+      "source": "./"
+    }
+  ]
+}
