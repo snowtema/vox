@@ -18,6 +18,50 @@ vox notes.md            the same from the terminal
 Long answers (600+ characters by default) are read automatically, short ones
 are not.
 
+## Install and update
+
+One command after cloning:
+
+```sh
+git clone git@github.com:snowtema/vox.git ~/Develop/vox
+sh ~/Develop/vox/install.sh              # or --no-silero if the system say is enough
+```
+
+The script installs the CLI into `~/.local/bin`, the `/say` alias, the Claude
+Code plugin, and then Silero: `uv` (via brew if missing), a venv with torch
+(~700 MB) and the model (~60 MB). Requires only macOS and python3 3.11+.
+Re-running is safe and updates the plugin. `vox doctor` shows the result.
+
+The same by hand:
+
+```sh
+ln -sf ~/Develop/vox/bin/vox ~/.local/bin/vox     # CLI in PATH
+claude plugin marketplace add ~/Develop/vox       # plugin: /vox:say and the Stop hook
+claude plugin install vox@vox-local
+vox setup silero                                  # optional
+```
+
+Plugin commands get a prefix, so inside the plugin the command is `/vox:say`.
+The short `/say` is a separate user-level alias, `~/.claude/commands/say.md`,
+with the same content as `commands/say.md` but calling `$HOME/.local/bin/vox`
+instead of `${CLAUDE_PLUGIN_ROOT}/bin/vox`.
+
+Claude Code copies the plugin into its cache, keyed by version. After changing
+code, bump `version` in `.claude-plugin/plugin.json` and `marketplace.json`,
+then:
+
+```sh
+claude plugin marketplace update vox-local
+claude plugin update vox@vox-local                 # and restart Claude Code
+```
+
+The terminal `vox` runs through a symlink and picks up changes immediately,
+no update needed. The config and lexicon live outside the plugin
+(`~/.config/vox/`), so editing them requires no update either.
+
+Turn it off entirely: `claude plugin disable vox` — or `vox off` to silence
+only the automatic reading.
+
 ## Why a separate tool
 
 You cannot feed a Claude Code answer straight into a synthesizer: you get
@@ -132,46 +176,6 @@ Tests are isolated: each gets its own `XDG_*` and `HOME`; the real config,
 state and cache are never touched. No audio is played and torch is not needed
 — the Silero worker is tested against a stub.
 
-## Install and update
+## License
 
-One command after cloning:
-
-```sh
-git clone git@github.com:snowtema/vox.git ~/Develop/vox
-sh ~/Develop/vox/install.sh              # or --no-silero if the system say is enough
-```
-
-The script installs the CLI into `~/.local/bin`, the `/say` alias, the Claude
-Code plugin, and then Silero: `uv` (via brew if missing), a venv with torch
-(~700 MB) and the model (~60 MB). Requires only macOS and python3 3.11+.
-Re-running is safe and updates the plugin. `vox doctor` shows the result.
-
-The same by hand:
-
-```sh
-ln -sf ~/Develop/vox/bin/vox ~/.local/bin/vox     # CLI in PATH
-claude plugin marketplace add ~/Develop/vox       # plugin: /vox:say and the Stop hook
-claude plugin install vox@vox-local
-vox setup silero                                  # optional
-```
-
-Plugin commands get a prefix, so inside the plugin the command is `/vox:say`.
-The short `/say` is a separate user-level alias, `~/.claude/commands/say.md`,
-with the same content as `commands/say.md` but calling `$HOME/.local/bin/vox`
-instead of `${CLAUDE_PLUGIN_ROOT}/bin/vox`.
-
-Claude Code copies the plugin into its cache, keyed by version. After changing
-code, bump `version` in `.claude-plugin/plugin.json` and `marketplace.json`,
-then:
-
-```sh
-claude plugin marketplace update vox-local
-claude plugin update vox@vox-local                 # and restart Claude Code
-```
-
-The terminal `vox` runs through a symlink and picks up changes immediately,
-no update needed. The config and lexicon live outside the plugin
-(`~/.config/vox/`), so editing them requires no update either.
-
-Turn it off entirely: `claude plugin disable vox` — or `vox off` to silence
-only the automatic reading.
+[MIT](LICENSE)
