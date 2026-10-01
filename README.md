@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/vox-logo.png" width="160" alt="vox logo" />
+</p>
+
 # vox
 
 Reads Claude Code answers and markdown files aloud with local TTS engines.

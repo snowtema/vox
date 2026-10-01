@@ -1,0 +1,9 @@
+Use case: logo-brand
+Asset type: finished text-free logo for the GitHub README and repository avatar of vox, a small local text-to-speech tool that reads coding-assistant answers and Markdown aloud.
+Primary request: Create one distinctive, stylish, slightly playful abstract voice emblem. Fuse a rounded speech-bubble silhouette with a flowing sound-wave motif into a single cohesive mark. Aim for a clever, memorable silhouette and beautifully balanced negative space, with very few bold shapes. The mark should feel lively and approachable but polished enough for a developer tool.
+Style/medium: crisp contemporary vector-like graphic, flat solid fills, immaculate curves, strong graphic design, no illustration scene.
+Composition/framing: square canvas, one centered standalone symbol, comfortably inset with generous clear space. Design must remain recognizable at small GitHub avatar sizes. No surrounding badge or enclosing square.
+Color: select a restrained high-contrast color treatment that remains legible against both light and dark interfaces.
+Scene/backdrop: genuinely transparent background.
+Text: none.
+Constraints: no words, no letters, no initials or monogram, no numerals, no watermark; one final logo only, not a contact sheet. Avoid a generic microphone icon, generic equalizer bars, headphones, robot faces, existing brand logos, thin decorative lines, gradients, 3D, shadows, glows, mockups, or presentation-board layouts. Deliver a production-ready square transparent PNG logo.
