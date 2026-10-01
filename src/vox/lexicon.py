@@ -49,7 +49,7 @@ TERMS: dict[str, str] = {
     "stripe": "страйп", "sentry": "сентри", "figma": "фигма",
     "anthropic": "антр+опик", "claude": "кл+од", "code": "к+од",
     "openai": "оупен эй ай",
-    "hetzner": "хетцнер", "wrangler": "рэнглер", "workers": "воркерс",
+    "hetzner": "хетцнер", "wrangler": "рэнглер",
     # git и процесс
     "git": "гит", "commit": "коммит", "merge": "мёрдж", "rebase": "ребейз",
     "branch": "бранч", "pull": "пулл", "push": "пуш", "fork": "форк",
@@ -107,13 +107,35 @@ TERMS: dict[str, str] = {
     "number": "намбер", "boolean": "булеан", "index": "индекс",
     "page": "пейдж", "layout": "лейаут", "app": "апп", "src": "сорс",
     "lib": "либ", "utils": "ютилс", "dist": "дист", "public": "паблик",
-    "assets": "ассетс", "styles": "стайлс", "scripts": "скриптс",
+    
     "main": "мейн", "dev": "дев", "preview": "превью", "watch": "вотч",
     "clean": "клин", "check": "чек", "format": "формат", "serve": "сёрв",
     "hero": "х+иро", "plugin": "пл+агин", "plugins": "пл+агины", "root": "рут", "bin": "бин",
-    "path": "пас", "dir": "дир", "home": "хоум", "vox": "вокс",
+    "path": "пэс", "dir": "дир", "home": "хоум", "vox": "вокс",
     "skill": "скилл", "skills": "скиллы", "agent": "+эйджент", "agents": "+эйдженты",
     "subagent": "саб+эйджент", "session": "с+ешн", "prompt": "промпт",
+    # формы единственного числа: множественное (tests, files, assets) строит _inflect
+    "script": "скрипт", "asset": "ассет", "style": "стайл", "worker": "воркер",
+    "tool": "тул", "user": "юзер", "hash": "хэш", "handler": "хендлер",
+    "helper": "хелпер", "parser": "парсер", "parse": "парс", "linter": "линтер",
+    "logger": "логгер", "package": "пэкидж", "module": "модуль", "version": "версия",
+    "doc": "док", "docs": "докс", "repo": "репо", "repository": "репозиторий",
+    "setup": "сетап", "workflow": "воркфлоу", "pipeline": "пайплайн",
+    "template": "темплейт", "terminal": "терминал", "model": "модель",
+    "frontend": "фронтенд", "backend": "бэкенд", "fullstack": "фулстек",
+    "database": "датабейс", "db": "ди би", "webhook": "вебхук",
+    "websocket": "вебсокет", "snapshot": "снапшот", "mock": "мок", "stub": "стаб",
+    "coverage": "коверидж", "cron": "крон", "proxy": "прокси", "chat": "чат",
+    "bot": "бот", "web": "веб", "site": "сайт", "link": "линк", "button": "баттон",
+    "input": "инпут", "output": "аутпут", "image": "имидж", "video": "видео",
+    "audio": "аудио", "mobile": "мобайл", "desktop": "десктоп",
+    "browser": "браузер", "id": "ай ди", "ip": "ай пи", "uuid": "ю ю ай ди",
+    "process": "процесс", "access": "аксесс", "address": "адрес",
+    "ok": "окей", "base": "бейс", "sha": "ша", "utf": "ю ти эф",
+    # составные имена и бренды, которые не разбираются по частям
+    "tsconfig": "тэ эс конфиг", "vscode": "ви эс к+од", "xcode": "экс к+од",
+    "iphone": "айфон", "ipad": "айпад", "npx": "эн пи экс",
+    "dockerfile": "докерфайл", "jsonl": "джейсон эл",
     # расширения файлов — читаются в составе имени
     "ts": "тэ эс", "tsx": "тэ эс икс", "js": "джей эс", "jsx": "джей эс икс",
     "py": "пай", "md": "эм ди", "mjs": "эм джей эс", "cjs": "си джей эс",
@@ -158,9 +180,16 @@ def translit(word: str) -> str:
     """Фонетическая транслитерация латинского слова в кириллицу."""
     src = word.lower()
 
-    # Немая конечная «e»: use -> us, name -> nam (но не в коротких словах)
-    if len(src) > 3 and src.endswith("e") and src[-2] not in _VOWELS:
-        src = src[:-1]
+    # Суффикс раньше «немой e»: иначе ture/dge/ble не дожили бы до проверки
+    suffix = ""
+    for tail, repl in _SUFFIXES:
+        if len(src) > len(tail) + 1 and src.endswith(tail):
+            suffix, src = repl, src[: -len(tail)]
+            break
+    else:
+        # Немая конечная «e»: use -> us, name -> nam (но не в коротких словах)
+        if len(src) > 3 and src.endswith("e") and src[-2] not in _VOWELS:
+            src = src[:-1]
 
     prefix = ""
     # Начальные гласные звучат иначе, чем в середине слова
@@ -168,12 +197,6 @@ def translit(word: str) -> str:
         prefix, src = "э", src[1:]
     elif src.startswith("u"):
         prefix, src = "ю", src[1:]
-
-    suffix = ""
-    for tail, repl in _SUFFIXES:
-        if len(src) > len(tail) + 1 and src.endswith(tail):
-            suffix, src = repl, src[: -len(tail)]
-            break
 
     out, i = [prefix], 0
     while i < len(src):
@@ -196,11 +219,75 @@ def spell_out(word: str) -> str:
 # camelCase -> camel Case, чтобы транслитерировать по морфемам
 _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
+# ── окончания: tests -> «тесты», caching -> «кэшинг» ─────────────────────────
+# Слова на -s, которые не множественное число: для незнакомой основы не режем.
+_NOT_PLURAL = {
+    "always", "perhaps", "sometimes", "towards", "besides", "afterwards", "nowadays",
+    "this", "his", "its", "yes", "does", "goes", "says", "was", "has", "plus", "minus",
+    "focus", "bonus", "status", "canvas", "bias", "chaos", "pros", "cons", "news",
+    "series", "species", "means", "lens", "perhaps", "across", "unless", "whereas",
+}
+_ES_PLURAL = ("ches", "shes", "xes", "zes", "sses")
+_NO_S_STEM = ("ss", "us", "is", "os", "as")
+_RU_VOWELS = "аеёиоуыэюя"
+_SIBILANTS = "кгхжшчщ"
+
+
+def _plural(ru: str) -> str:
+    """Русское окончание множественного числа к заимствованному слову."""
+    if " " in ru or not ru:
+        return ru                        # «эй пи ай», «ай ди» — не склоняются
+    last = ru[-1]
+    if last in "ья":
+        return ru[:-1] + "и"             # модуль -> модули, версия -> версии
+    if last == "а":
+        return ru[:-1] + ("и" if ru[-2:-1] in _SIBILANTS else "ы")   # фича -> фичи
+    if last in _RU_VOWELS or last == "й":
+        return ru                        # кофе, кей: оставляем как есть
+    return ru + ("и" if last in _SIBILANTS else "ы")
+
+
+def _inflect(word: str) -> str | None:
+    """Слово с окончанием -s/-es/-ies/-ing/-ed по известной основе, иначе None."""
+    if re.fullmatch(r"[A-Z]{2,5}s", word):
+        return _render_word(word[:-1])   # APIs -> «эй пи ай», UIs -> «юай»
+    w = word.lower()
+    if not w.isalpha():
+        return None
+
+    if len(w) >= 3 and w.endswith("s"):
+        stems = [w[:-1]]
+        if w.endswith(_ES_PLURAL):
+            stems.append(w[:-2])
+        if w.endswith("ies"):
+            stems.append(w[:-3] + "y")
+        for stem in stems:
+            if stem in TERMS:
+                return _plural(TERMS[stem])
+        # Основы нет в словаре — транслитерируем её, но только для очевидных случаев
+        if len(w) >= 5 and w not in _NOT_PLURAL and not w.endswith(_NO_S_STEM):
+            return _plural(translit(stems[-1]))
+        return None
+
+    for ending, ru in (("ing", "инг"), ("ed", "ед")):
+        if len(w) >= len(ending) + 2 and w.endswith(ending):
+            base = w[: -len(ending)]
+            tries = [(base, ""), (base + "e", "")]
+            if len(base) >= 3 and base[-1] == base[-2]:       # running -> run + н
+                tries.append((base[:-1], translit(base[-1])))
+            for stem, extra in tries:
+                if stem in TERMS:
+                    return TERMS[stem] + extra + ru
+    return None
+
 
 def _render_word(word: str) -> str:
     key = word.lower()
     if key in TERMS:
         return TERMS[key]
+    inflected = _inflect(word)
+    if inflected is not None:
+        return inflected
     # Аббревиатура из заглавных: читаем по буквам
     if 1 <= len(word) <= 5 and word.isupper() and word.isalpha():
         return spell_out(word)
@@ -211,7 +298,88 @@ def _render_word(word: str) -> str:
     return translit(word)
 
 
-_LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*")
+# ── буквы с цифрами: S3, EC2, v2, HTTP2 ──────────────────────────────────────
+_LETTERS_DIGITS = re.compile(r"([A-Za-z]+)(\d+)")
+
+
+def _render_letters(letters: str) -> str:
+    key = letters.lower()
+    if key in TERMS:
+        return TERMS[key]
+    if len(letters) == 1:
+        return LETTER_NAMES[key]
+    if len(letters) <= 3 and (letters.isupper() or letters.islower()):
+        return spell_out(letters)         # EC2 -> «и си два», mp3 -> «эм пи три»
+    return _render_word(letters)
+
+
+# ── апострофы: it's, don't, Claude's ─────────────────────────────────────────
+CONTRACTIONS = {
+    "it's": "итс", "that's": "затс", "there's": "зэрс", "here's": "хиэрс",
+    "what's": "уотс", "let's": "летс", "he's": "хиз", "she's": "шиз", "who's": "хуз",
+    "don't": "донт", "doesn't": "дазнт", "didn't": "диднт", "isn't": "изнт",
+    "aren't": "арнт", "wasn't": "уознт", "weren't": "вернт", "can't": "кэнт",
+    "won't": "воунт", "couldn't": "куднт", "shouldn't": "шуднт", "wouldn't": "вуднт",
+    "haven't": "хэвнт", "hasn't": "хэзнт", "hadn't": "хэднт",
+    "i'm": "айм", "i'll": "айл", "i've": "айв", "i'd": "айд",
+    "you're": "юр", "you'll": "юл", "you've": "юв", "you'd": "юд",
+    "we're": "виар", "we'll": "вил", "we've": "вив", "we'd": "вид",
+    "they're": "зэр", "they'll": "зейл", "they've": "зейв", "they'd": "зейд",
+}
+
+# ── сокращения: e.g., i.e., etc ──────────────────────────────────────────────
+_ABBREVIATIONS = [
+    (re.compile(r"\be\.\s?g\.", re.I), "например"),
+    (re.compile(r"\bi\.\s?e\.", re.I), "то есть"),
+    (re.compile(r"\betc\b"), "и так далее"),
+    (re.compile(r"\bvs\b"), "против"),       # без re.I: «VS Code» — не «против»
+]
+
+
+def _expand_abbreviations(text: str) -> str:
+    for pattern, spoken in _ABBREVIATIONS:
+        text = pattern.sub(
+            lambda m, spoken=spoken: spoken.capitalize() if m.group(0)[0].isupper() else spoken,
+            text,
+        )
+    return text
+
+
+# ── токены ───────────────────────────────────────────────────────────────────
+_LATIN_RUN = re.compile(
+    r"[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*(?:['’][A-Za-z]{1,3})?"
+)
+
+
+def _render_token(token: str, mode: str) -> str:
+    key = token.lower()
+    if key in TERMS:
+        return TERMS[key]
+
+    m = _LETTERS_DIGITS.fullmatch(token)
+    if m:
+        letters, digits = m.groups()
+        if mode == "dict" and letters.lower() not in TERMS:
+            return token
+        return f"{_render_letters(letters)} {digits}"
+
+    # Составные вроде next.js или my-app: пробуем целиком, потом по частям
+    parts = re.split(r"[._-]", token)
+    if len(parts) > 1 and "_" in token and token.isupper():
+        # SCREAMING_SNAKE_CASE — это слова, записанные капсом
+        parts = [p.lower() for p in parts]
+    if len(parts) > 1:
+        rendered = [TERMS.get(p.lower()) for p in parts]
+        if mode == "dict" and not any(rendered):
+            return token
+        return " ".join(
+            r if r else (_render_word(p) if mode == "dict+translit" else p)
+            for p, r in zip(parts, rendered)
+            if p
+        )
+    if mode == "dict":
+        return token
+    return _render_word(token)
 
 
 def latinize(text: str, mode: str = "dict+translit") -> str:
@@ -225,29 +393,15 @@ def latinize(text: str, mode: str = "dict+translit") -> str:
         return text
 
     def repl(m: re.Match[str]) -> str:
-        token = m.group(0)
-        key = token.lower()
-        if key in TERMS:
-            return TERMS[key]
-        # Составные вроде next.js или my-app: пробуем целиком, потом по частям
-        parts = re.split(r"[._-]", token)
-        if len(parts) > 1 and "_" in token and token.isupper():
-            # SCREAMING_SNAKE_CASE — это слова, записанные капсом
-            parts = [p.lower() for p in parts]
-        if len(parts) > 1:
-            rendered = [TERMS.get(p.lower()) for p in parts]
-            if mode == "dict" and not any(rendered):
-                return token
-            return " ".join(
-                r if r else (_render_word(p) if mode == "dict+translit" else p)
-                for p, r in zip(parts, rendered)
-                if p
-            )
-        if mode == "dict":
-            return token
-        return _render_word(token)
+        token = m.group(0).replace("’", "'")
+        base, apostrophe, _ = token.partition("'")
+        if not apostrophe:
+            return _render_token(token, mode)
+        if token.lower() in CONTRACTIONS:
+            return CONTRACTIONS[token.lower()]
+        return _render_token(base, mode)      # Claude's -> «кл+од»: притяжательное без звука
 
-    return _LATIN_RUN.sub(repl, text)
+    return _LATIN_RUN.sub(repl, _expand_abbreviations(text))
 
 
 def add_terms(extra: dict[str, str]) -> None:
